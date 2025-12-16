@@ -1,0 +1,125 @@
+version: "3"
+services:
+  # --- ETCD for Patroni ---
+  etcd:
+    image: bitnami/etcd:latest
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+    ports:
+      - "2379:2379"
+
+  # --- Patroni Nodes ---
+  patroni1:
+    image: cybertec/patroni-pg16:latest
+    hostname: patroni1
+    environment:
+      - ETCD_HOST=etcd:2379
+      - PATRONI_SCOPE=appdb
+      - PATRONI_NAMESPACE=/db
+      - PATRONI_NAME=patroni1
+      - PATRONI_RESTAPI_CONNECT_ADDRESS=patroni1:8008
+      - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      - PATRONI_POSTGRESQL_CONNECT_ADDRESS=patroni1:5432
+      - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      - PATRONI_POSTGRESQL_DATA_DIR=/data/patroni1
+      - PATRONI_REPLICATION_USERNAME=repl
+      - PATRONI_REPLICATION_PASSWORD=repl_pwd
+      - PATRONI_SUPERUSER_USERNAME=postgres
+      - PATRONI_SUPERUSER_PASSWORD=postgres
+      - PATRONI_POSTGRESQL_PG_HBA=host all all 0.0.0.0/0 md5
+    ports:
+      - "5432"
+      - "8008"
+    depends_on:
+      - etcd
+
+  patroni2:
+    image: cybertec/patroni-pg16:latest
+    hostname: patroni2
+    environment:
+      - ETCD_HOST=etcd:2379
+      - PATRONI_SCOPE=appdb
+      - PATRONI_NAMESPACE=/db
+      - PATRONI_NAME=patroni2
+      - PATRONI_RESTAPI_CONNECT_ADDRESS=patroni2:8008
+      - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      - PATRONI_POSTGRESQL_CONNECT_ADDRESS=patroni2:5432
+      - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      - PATRONI_POSTGRESQL_DATA_DIR=/data/patroni2
+      - PATRONI_REPLICATION_USERNAME=repl
+      - PATRONI_REPLICATION_PASSWORD=repl_pwd
+      - PATRONI_SUPERUSER_USERNAME=postgres
+      - PATRONI_SUPERUSER_PASSWORD=postgres
+      - PATRONI_POSTGRESQL_PG_HBA=host all all 0.0.0.0/0 md5
+    ports:
+      - "5433"
+      - "8009"
+    depends_on:
+      - etcd
+
+  patroni3:
+    image: cybertec/patroni-pg16:latest
+    hostname: patroni3
+    environment:
+      - ETCD_HOST=etcd:2379
+      - PATRONI_SCOPE=appdb
+      - PATRONI_NAMESPACE=/db
+      - PATRONI_NAME=patroni3
+      - PATRONI_RESTAPI_CONNECT_ADDRESS=patroni3:8008
+      - PATRONI_RESTAPI_LISTEN=0.0.0.0:8008
+      - PATRONI_POSTGRESQL_CONNECT_ADDRESS=patroni3:5432
+      - PATRONI_POSTGRESQL_LISTEN=0.0.0.0:5432
+      - PATRONI_POSTGRESQL_DATA_DIR=/data/patroni3
+      - PATRONI_REPLICATION_USERNAME=repl
+      - PATRONI_REPLICATION_PASSWORD=repl_pwd
+      - PATRONI_SUPERUSER_USERNAME=postgres
+      - PATRONI_SUPERUSER_PASSWORD=postgres
+      - PATRONI_POSTGRESQL_PG_HBA=host all all 0.0.0.0/0 md5
+    ports:
+      - "5434"
+      - "8010"
+    depends_on:
+      - etcd
+
+  # --- Redis Sentinel ---
+  redis-master:
+    image: redis:7
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+
+  redis-replica:
+    image: redis:7
+    command: redis-server --replicaof redis-master 6379
+    ports:
+      - "6380:6379"
+    depends_on:
+      - redis-master
+
+  redis-sentinel:
+    image: bitnami/redis-sentinel:latest
+    environment:
+      - REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS=3000
+      - REDIS_MASTER_HOST=redis-master
+      - REDIS_MASTER_PORT_NUMBER=6379
+      - REDIS_MASTER_SET=mymaster
+      - REDIS_SENTINEL_QUORUM=1
+    ports:
+      - "26379:26379"
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  # --- HAProxy ---
+  haproxy:
+    image: haproxy:2.9
+    ports:
+      - "5000:5000" # Master (Write)
+      - "5001:5001" # Replica (Read)
+      - "7000:7000" # Stats
+    volumes:
+      - ./haproxy/haproxy_bonus.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - patroni1
+      - patroni2
+      - patroni3
